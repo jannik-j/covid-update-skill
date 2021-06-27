@@ -12,27 +12,39 @@ class LocationHandler():
 
     
     def get_county(self, query: str):
-        location = self.locator.geocode(query, addressdetails=True)
+        location = self.locator.geocode(query+', Deutschland', addressdetails=True)
         # Exception for the city states in Germany. They are states and counties simultaneously. Nominatim does not return a county for an address in them
         # but the Covid Data API needs them as Counties
         if location.raw['address']['state'] in ['Hamburg', 'Berlin', 'Bremen']:
             return location.raw['address']['state']
+        # Some larger cities are their own counties
+        elif 'county' not in location.raw['address']:
+            return location.raw['address']['city']
         else:
             return location.raw['address']['county']
     
     def get_county_code(self, name: str):
-        matched_code, conf = match_one(name, self.county_dict)
-        return matched_code
+        matched_county, conf = match_one(name, list(self.county_dict.keys()))
+        return matched_county, self.county_dict[matched_county], conf
+    
+    def is_germany(self, query: str):
+        return query=='deutschland'
+    
+    def match_states(self, query: str):
+        return match_one(query, self.state_dict)
+    
+    def match_counties(self, query: str):
+        return match_one(query, self.county_dict)
     
     def _build_dict(self):
-        with urllib.request.urlopen("https://api.corona-zahlen.org/states/") as url:
+        with urllib.request.urlopen("https://api.corona-zahlen.org/states") as url:
             state_data = json.load(url)['data']
         state_dict = {}
         for key in state_data.keys():
             if key != 'meta':
                 state_dict[state_data[key]['name']] = key
         
-        with urllib.request.urlopen("https://api.corona-zahlen.org/districts/") as url:
+        with urllib.request.urlopen("https://api.corona-zahlen.org/districts") as url:
             county_data = json.load(url)['data']
         county_dict = {}
         for key in county_data.keys():
