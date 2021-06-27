@@ -31,12 +31,32 @@ class CovidUpdate(MycroftSkill):
             rvalue = str(covid_data['r']['value']).split('.')
             dialog_dict['rvalueWhole'] = rvalue[0]
             dialog_dict['rvalueDecimal'] = rvalue[1]
-            dialog_dict['name'] = 'Deutschland'
         self.speak_dialog('update.covid', dialog_dict)
         self.speak_dialog('new.cases', dialog_dict)
         self.speak_dialog('week.incidence', dialog_dict)
         if 'rvalueWhole' in dialog_dict:
             self.speak_dialog('rvalue', dialog_dict)
+    
+    @intent_handler(IntentBuilder('VaccinationProgress')
+                                        .require('Vaccination')
+                                        .require('Progress')
+                                        .optionally('Covid')
+                                        .optionally('MyLocation')
+                                        .optionally('Location'))
+    def handle_vaccination_progress(self, message):
+        code, level = self._get_loc_and_level(message)
+        self.log.info('Got code '+code+' and level '+level+' for the requested location and level')
+        if level is 'districts':
+            self.speak_dialog('vacc.not.at.district.level')
+        else:
+            vacc_data = self._get_vaccination_data()
+            if level is not 'germany':
+                vacc_data = vacc_data['states'][code]
+            data_dict = self._build_vaccination_dialog(vacc_data)
+            self.speak_dialog('vaccination.progress', data_dict)
+            self.speak_dialog('vaccination.quota.first', data_dict)
+            self.speak_dialog('vaccination.quota.second', data_dict)
+            self.speak_dialog('vaccination.delta', data_dict)
 
 
     def _get_covid_data(self, code: str, level: str):
@@ -50,19 +70,12 @@ class CovidUpdate(MycroftSkill):
         else:
             return covid_data['data'][code]
     
-    def _build_update_dialog(self, covid_data: dict):
-        data_dict = {}
-        if 'name' in covid_data:
-            data_dict['name'] = covid_data['name']
-        if covid_data['weekIncidence'] > 0:
-            data_dict['weekIncidenceWhole'] = str(covid_data['weekIncidence']).split('.')[0]
-            data_dict['weekIncidenceDecimal'] = str(covid_data['weekIncidence']).split('.')[1][:1]
-        else:
-            data_dict['weekIncidenceWhole'] = '0'
-            data_dict['weekIncidenceDecimal'] = '0'
-        data_dict['deltaCases'] = covid_data['delta']['cases']
-        data_dict['deltaDeaths'] = covid_data['delta']['deaths']
-        return data_dict
+    def _get_vaccination_data(self):
+        url = 'https://api.corona-zahlen.org/vaccinations'
+        self.log.info('Trying to access api at '+url)
+        with urllib.request.urlopen(url) as api_data:
+            vacc_data = json.load(api_data)['data']
+        return vacc_data
     
     def _get_loc_and_level(self, message):
         if self.voc_match(message.data.get('utterance'), 'MyLocation', exact=True):
@@ -94,8 +107,39 @@ class CovidUpdate(MycroftSkill):
         # If no Location is provided, the skill should give an update for Germany
         else:
             return '', 'germany'
-            
-            
+    
+    def _build_update_dialog(self, covid_data: dict):
+        data_dict = {}
+        if 'name' in covid_data:
+            data_dict['name'] = covid_data['name']
+        else:
+            data_dict['name'] = 'deutschland'
+        if covid_data['weekIncidence'] > 0:
+            data_dict['weekIncidenceWhole'] = str(covid_data['weekIncidence']).split('.')[0]
+            data_dict['weekIncidenceDecimal'] = str(covid_data['weekIncidence']).split('.')[1][:1]
+        else:
+            data_dict['weekIncidenceWhole'] = '0'
+            data_dict['weekIncidenceDecimal'] = '0'
+        data_dict['deltaCases'] = covid_data['delta']['cases']
+        data_dict['deltaDeaths'] = covid_data['delta']['deaths']
+        return data_dict
+
+    def _build_vaccination_dialog(self, vacc_data: dict):
+        data_dict = {}
+        if 'name' in vacc_data:
+            data_dict['name'] = vacc_data['name']
+        else:
+            data_dict['name'] = 'deutschland'
+        quota_first_vacc = round(vacc_data['quote'], 3)
+        data_dict['quotaFirstVaccWhole'] = str(quota_first_vacc)[2:4]
+        data_dict['quotaFirstVaccDecimal'] = str(quota_first_vacc)[4]
+        quota_second_vacc = round(vacc_data['secondVaccination']['quote'], 3)
+        data_dict['quotaSecondVaccWhole'] = str(quota_second_vacc)[2:4]
+        data_dict['quotaSecondVaccDecimal'] = str(quota_second_vacc)[4]
+        data_dict['newFirstVaccs'] = vacc_data['delta']
+        data_dict['newSecondVaccs'] = vacc_data['secondVaccination']['delta']
+        return data_dict
+
 
 def create_skill():
     return CovidUpdate()
