@@ -15,7 +15,7 @@ class CovidUpdate(MycroftSkill):
         self.location_handler = LocationHandler()
         
         self.location_config.county = self.location_handler.get_county(self.location_config.city + ", " + self.location_config.state)
-        self.location_config.county_code = self.location_handler.get_county_code(self.location_config.county)
+        self.location_config.county_code = self.location_handler.get_county_code(self.location_config.county)[1]
 
     @intent_handler(IntentBuilder('CovidUpdate')
                                         .require('Covid')
@@ -23,10 +23,13 @@ class CovidUpdate(MycroftSkill):
                                         .optionally('MyLocation')
                                         .optionally('Location'))
     def handle_update_covid(self, message):
-        code, level = self._get_loc_and_level(message)
+        code, level = self._get_loc_and_level(message, 'districts')
         self.log.info('Got code '+code+' and level '+level+' for the requested location and level')
         covid_data = self._get_covid_data(code, level)
-        dialog_dict = self._build_update_dialog(covid_data)
+        history_data = self._get_incidence_history(code, level)
+        dialog_dict = self._build_incidence_dialog(covid_data)
+        dialog_dict = self._build_delta_dialog(covid_data, dialog_dict)
+        dialog_dict = self._build_incidence_history_dialog(history_data, dialog_dict)
         if level is 'germany':
             rvalue = str(covid_data['r']['value']).split('.')
             dialog_dict['rvalueWhole'] = rvalue[0]
@@ -34,8 +37,24 @@ class CovidUpdate(MycroftSkill):
         self.speak_dialog('update.covid', dialog_dict)
         self.speak_dialog('new.cases', dialog_dict)
         self.speak_dialog('week.incidence', dialog_dict)
+        self.speak_dialog('last.week.incidence', dialog_dict)
         if 'rvalueWhole' in dialog_dict:
             self.speak_dialog('rvalue', dialog_dict)
+    
+    @intent_handler(IntentBuilder('Incidence')
+                                        .require('Incidence')
+                                        .optionally('Covid')
+                                        .optionally('Location')
+                                        .optionally('MyLocation'))
+    def handle_incidence(self, message):
+        code, level = self._get_loc_and_level(message, 'districts')
+        self.log.info('Got code '+code+' and level '+level+' for the requested location and level')
+        covid_data = self._get_covid_data(code, level)
+        history_data = self._get_incidence_history(code, level)
+        dialog_dict = self._build_incidence_dialog(covid_data)
+        dialog_dict = self._build_incidence_history_dialog(history_data, dialog_dict)
+        self.speak_dialog('week.incidence.loc', dialog_dict)
+        self.speak_dialog('last.week.incidence', dialog_dict)
     
     @intent_handler(IntentBuilder('VaccinationProgress')
                                         .require('Vaccination')
@@ -44,7 +63,7 @@ class CovidUpdate(MycroftSkill):
                                         .optionally('MyLocation')
                                         .optionally('Location'))
     def handle_vaccination_progress(self, message):
-        code, level = self._get_loc_and_level(message)
+        code, level = self._get_loc_and_level(message, 'states')
         self.log.info('Got code '+code+' and level '+level+' for the requested location and level')
         if level is 'districts':
             self.speak_dialog('vacc.not.at.district.level')
@@ -70,6 +89,19 @@ class CovidUpdate(MycroftSkill):
         else:
             return covid_data['data'][code]
     
+    def _get_incidence_history(self, code: str, level: str):
+        if level is 'germany':
+            url = "https://api.corona-zahlen.org/germany/history/incidence/7"
+        else:
+            url = "https://api.corona-zahlen.org/"+level+'/'+code+'/'+'history/incidence/7'
+        self.log.info('Trying to access api at '+url)
+        with urllib.request.urlopen(url) as api_data:
+            history_data = json.load(api_data)['data']
+        if level is 'germany':
+            return history_data
+        else:
+            return history_data[code]['history']
+    
     def _get_vaccination_data(self):
         url = 'https://api.corona-zahlen.org/vaccinations'
         self.log.info('Trying to access api at '+url)
@@ -77,10 +109,13 @@ class CovidUpdate(MycroftSkill):
             vacc_data = json.load(api_data)['data']
         return vacc_data
     
-    def _get_loc_and_level(self, message):
-        if self.voc_match(message.data.get('utterance'), 'MyLocation', exact=True):
+    def _get_loc_and_level(self, message, myloc_level):
+        if self.voc_match(message.data.get('utterance'), 'MyLocation'):
             self.log.info('Got Keyword for MyLocation')
-            return self.location_config.county_code, 'districts'
+            if myloc_level is 'districts':
+                return self.location_config.county_code, 'districts'
+            elif myloc_level is 'states':
+                return self.location_handler.match_states(self.location_config.state)[0], 'states'
         
         elif message.data.get('Location'):
             location = message.data.get('Location')
@@ -108,8 +143,7 @@ class CovidUpdate(MycroftSkill):
         else:
             return '', 'germany'
     
-    def _build_update_dialog(self, covid_data: dict):
-        data_dict = {}
+    def _build_incidence_dialog(self, covid_data: dict, data_dict={}):
         if 'name' in covid_data:
             data_dict['name'] = covid_data['name']
         else:
@@ -120,9 +154,18 @@ class CovidUpdate(MycroftSkill):
         else:
             data_dict['weekIncidenceWhole'] = '0'
             data_dict['weekIncidenceDecimal'] = '0'
+        
+        return data_dict
+    
+    def _build_delta_dialog(self, covid_data: dict, data_dict={}):
         data_dict['deltaCases'] = covid_data['delta']['cases']
         data_dict['deltaDeaths'] = covid_data['delta']['deaths']
-        return data_dict
+    
+    def _build_incidence_history_dialog(self, history_data: dict, dialog_dict: dict):
+        dialog_dict['incidenceLastWeekWhole'] = str(history_data[0]['weekIncidence']).split('.')[0]
+        dialog_dict['incidenceLastWeekDecimal'] = str(history_data[0]['weekIncidence']).split('.')[1][:1]
+        return dialog_dict
+
 
     def _build_vaccination_dialog(self, vacc_data: dict):
         data_dict = {}
