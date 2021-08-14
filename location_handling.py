@@ -13,12 +13,8 @@ class LocationHandler():
     
     def get_county(self, query: str):
         location = self.locator.geocode(query+', Deutschland', addressdetails=True)
-        # Exception for the city states in Germany. They are states and counties simultaneously. Nominatim does not return a county for an address in them
-        # but the Covid Data API needs them as Counties
-        if location.raw['address']['state'] in ['Hamburg', 'Berlin', 'Bremen']:
-            return location.raw['address']['state']
-        # Some larger cities are their own counties
-        elif 'county' not in location.raw['address']:
+        # Exception for the city states and larger cities that are their own counties in Germany
+        if 'county' not in location.raw['address']:
             return location.raw['address']['city']
         else:
             return location.raw['address']['county']
