@@ -173,12 +173,12 @@ class CovidUpdate(MycroftSkill):
             data_dict['name'] = vacc_data['name']
         else:
             data_dict['name'] = 'deutschland'
-        quota_first_vacc = round(vacc_data['quote'], 3)
-        data_dict['quotaFirstVaccWhole'] = str(quota_first_vacc)[2:4]
-        data_dict['quotaFirstVaccDecimal'] = str(quota_first_vacc)[4]
-        quota_second_vacc = round(vacc_data['secondVaccination']['quote'], 3)
-        data_dict['quotaSecondVaccWhole'] = str(quota_second_vacc)[2:4]
-        data_dict['quotaSecondVaccDecimal'] = str(quota_second_vacc)[4]
+        quota_first_vacc = round(vacc_data['quote'], 3)*1000
+        data_dict['quotaFirstVaccWhole'] = str(quota_first_vacc)[:2]
+        data_dict['quotaFirstVaccDecimal'] = str(quota_first_vacc)[2]
+        quota_second_vacc = round(vacc_data['secondVaccination']['quote'], 3)*1000
+        data_dict['quotaSecondVaccWhole'] = str(quota_second_vacc)[:2]
+        data_dict['quotaSecondVaccDecimal'] = str(quota_second_vacc)[2]
         data_dict['newFirstVaccs'] = vacc_data['delta']
         data_dict['newSecondVaccs'] = vacc_data['secondVaccination']['delta']
         return data_dict
